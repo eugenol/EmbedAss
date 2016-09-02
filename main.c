@@ -15,15 +15,19 @@
  * setup routines come here.
  * e.g setting up the timers, adc, etc.
  */
-void init_uart(void)
-{
+void init_uart(void) {
     SPBRG = 0x19; // 9600 baud @ 4 MHz
     TXEN = 1; // enable transmitter
     BRGH = 1; // select high baud rate
     SPEN = 1; // enable serial port
     CREN = 1; // enable continuous operation
 }
-
+void init_adc(void) {
+    
+}
+void init_counter(void) {
+    
+}
 /*
  * Overwrite putch, so that calling
  * printf() will print to the USART
@@ -43,7 +47,11 @@ void mainloop(void) {
 }
 
 void main(void) {
+    //call all init routines
     init_uart();
+    init_adc();
+    init_counter();
+    //loop
     for(;;)
         mainloop();
     return;
