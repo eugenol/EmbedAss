@@ -104,7 +104,7 @@ void mainloop(void) {
     sprintf(time_spent, "%f", int_voltage);
     sprintf(voltage, "%d", ext_adc);
     printf(time_spent);
-    printf(ext_adc);
+    printf(voltage);
 }
 
 void main(void) {
