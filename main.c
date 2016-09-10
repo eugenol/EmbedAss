@@ -21,11 +21,21 @@
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
 
+
+
+//DEFINES
 /* Using Internal Clock of 4 Mhz */
 #define FOSC 4000000L
+#define _XTAL_FREQ FOSC
+#define testbit(var, bit) ((var) & (1 <<(bit)))
+#define setbit(var, bit) ((var) |= (1 << (bit)))
+#define clrbit(var, bit) ((var) &= ~(1 << (bit)))
+
+//INCLUDES
 
 #include <xc.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 
 /*
@@ -39,11 +49,32 @@ void init_uart(void) {
     SPEN = 1; // enable serial port
     CREN = 1; // enable continuous operation
 }
-void init_adc(void) {
-    
+
+void init_adcs(void) {
+  //set the ADC on to RA2
+    setbit(TRISA,2);    //set TRISA:2 (input)
+    setbit (ANSEL,2);   //make it analogue
+  //set the 555 on RC6
+    setbit(TRISC,6);    //set TRISC:6 (input)
+    clrbit(ANSELH,2);   //make it inputs digital on RC6
+    ADCON0 = 0b00001001; // Analog channel select @ AN2, ADC enabled
+    __delay_ms(1); //delay after starting the ADC
 }
-void init_counter(void) {
-    
+
+int get_adc(void){
+    setbit(ADCON0,1);
+    __delay_ms(1);
+    while(testbit(ADCON0,1));//wait until test is done
+    return ADRESH;//returns the upper 8 bits of the ADC reading
+}
+int get_555(void){//returns the number of ms that the system was low for
+    long int counter = 0;
+    while(!(testbit(PORTC,6)));//loop while port is low
+    while(testbit(PORTC,6)){//wait until port goes high again
+        __delay_ms(1);//delay 1 ms
+        counter++;
+    }
+    return counter;
 }
 /*
  * Overwrite putch, so that calling
@@ -61,15 +92,31 @@ void putch(unsigned char data) {
 */
 void mainloop(void) {
     printf("Hello, World!\n");
+    int int_adc;
+    float int_voltage;
+    float ext_time;
+    int ext_adc;
+    int_adc = get_adc();
+    ext_adc = get_555();//returns number of msec
+    int_voltage = 256 * 5 / (float)int_adc; //get value as a voltage
+    char time_spent[4];
+    char voltage[3];
+    sprintf(time_spent, "%f", int_voltage);
+    sprintf(voltage, "%d", ext_adc);
+    printf(time_spent);
+    printf(ext_adc);
 }
 
 void main(void) {
     //call all init routines
     init_uart();
-    init_adc();
-    init_counter();
+    init_adcs();
     //loop
-    for(;;)
+    for(;;){
         mainloop();
+        int i;
+        for(i=0;0<100;i++)
+            __delay_ms(10);// loop about every second
+    }
     return;
 }
