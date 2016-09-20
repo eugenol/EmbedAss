@@ -61,21 +61,8 @@ void init_adcs(void) {
     __delay_ms(1); //delay after starting the ADC
 }
 
-int get_adc(void){
-    setbit(ADCON0,1);
-    __delay_ms(1);
-    while(testbit(ADCON0,1));//wait until test is done
-    return ADRESH;//returns the upper 8 bits of the ADC reading
-}
-int get_555(void){//returns the number of ms that the system was low for
-    long int counter = 0;
-    while(!(testbit(PORTC,6)));//loop while port is low
-    while(testbit(PORTC,6)){//wait until port goes high again
-        __delay_ms(1);//delay 1 ms
-        counter++;
-    }
-    return counter;
-}
+
+
 /*
  * Overwrite putch, so that calling
  * printf() will print to the USART
@@ -91,20 +78,14 @@ void putch(unsigned char data) {
  * so all code goes in here.
 */
 void mainloop(void) {
+    //function declarations
+    unsigned char get_555();//returns number of msec
+    unsigned char get_adc();//returns a number between 0 and 255
     printf("Hello, World!\n");
-    int int_adc;
-    float int_voltage;
-    float ext_time;
-    int ext_adc;
-    int_adc = get_adc();
-    ext_adc = get_555();//returns number of msec
-    int_voltage = 256 * 5 / (float)int_adc; //get value as a voltage
-    char time_spent[4];
-    char voltage[3];
-    sprintf(time_spent, "%f", int_voltage);
-    sprintf(voltage, "%d", ext_adc);
-    printf(time_spent);
-    printf(voltage);
+    unsigned char output_555 = get_555();
+    unsigned char output_adc = get_adc();
+    printf(get_555());
+    printf(output_adc);
 }
 
 void main(void) {
@@ -114,9 +95,27 @@ void main(void) {
     //loop
     for(;;){
         mainloop();
-        int i;
+        unsigned short int i;
         for(i=0;0<100;i++)
             __delay_ms(10);// loop about every second
     }
-    return;
+}
+
+//functions
+unsigned char get_555(){//returns the number of ms that the system was low for
+    unsigned char counter = 0;
+    while(!(testbit(PORTC,6)));//loop while port is low
+    while(testbit(PORTC,6)){//wait until port goes high again
+        __delay_ms(1);//delay 1 ms
+        counter++;
+    }
+    return counter;
+}
+
+unsigned char get_adc(void){
+    unsigned char ToChar(int);
+    setbit(ADCON0,1);
+    __delay_ms(1);
+    while(testbit(ADCON0,1));//wait until test is done
+    return ADRESH;//returns the upper 8 bits of the ADC reading
 }
