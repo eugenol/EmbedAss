@@ -79,13 +79,13 @@ void putch(unsigned char data) {
 */
 void mainloop(void) {
     //function declarations
-    unsigned char get_555();//returns number of msec
-    unsigned char get_adc();//returns a number between 0 and 255
+    int get_555();//returns number of msec
+    int get_adc();//returns a number between 0 and 255
     printf("Hello, World!\n");
-    unsigned char output_555 = get_555();
-    unsigned char output_adc = get_adc();
-    printf(get_555());
-    printf(output_adc);
+    int output_555 = get_555();
+    int output_adc = get_adc();
+    printf("%d",get_555());
+    printf("%d",output_adc);
 }
 
 void main(void) {
@@ -102,8 +102,8 @@ void main(void) {
 }
 
 //functions
-unsigned char get_555(){//returns the number of ms that the system was low for
-    unsigned char counter = 0;
+int get_555(){//returns the number of ms that the system was low for
+    int counter = 0;
     while(!(testbit(PORTC,6)));//loop while port is low
     while(testbit(PORTC,6)){//wait until port goes high again
         __delay_ms(1);//delay 1 ms
@@ -112,8 +112,7 @@ unsigned char get_555(){//returns the number of ms that the system was low for
     return counter;
 }
 
-unsigned char get_adc(void){
-    unsigned char ToChar(int);
+int get_adc(void){
     setbit(ADCON0,1);
     __delay_ms(1);
     while(testbit(ADCON0,1));//wait until test is done
