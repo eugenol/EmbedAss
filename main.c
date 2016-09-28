@@ -25,23 +25,46 @@
 
 //DEFINES
 /* Using Internal Clock of 4 Mhz */
-#define FOSC 4000000L
-#define _XTAL_FREQ FOSC
-#define testbit(var, bit) ((var) & (1 <<(bit)))
-#define setbit(var, bit) ((var) |= (1 << (bit)))
-#define clrbit(var, bit) ((var) &= ~(1 << (bit)))
+#define _XTAL_FREQ 4000000L //FOSC
 
 //INCLUDES
-
 #include <xc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
+
+unsigned long TMR1_counter=0;  // Count overflow from interrupt.
+unsigned long TMR0_counter=0;  // Count overflow from interrupt.
+
+bit time_done = 0;   // Do last short overflow count.
+bit transmit_data = 0;
+//
+// Frequency Counter values.
+//
+unsigned char TMR1L_val; // Store Timer 1 low byte.
+unsigned char TMR1H_val; // store Timer 1 high byte.
+unsigned long TMR1_ovfl_val = 0; // store timer 1 overflows - multiples of 65536.
+
+//function declarations
+int get_adc();//returns a number between 0 and 1023
+
 /*
  * setup routines come here.
  * e.g setting up the timers, adc, etc.
  */
+void init_ports(void) {
+    TRISA = 0xFF;   //set all digital I/O to inputs
+    TRISB = 0xFF;
+    TRISC = 0xFF;
+  
+    ANSEL = 0x00;   //disable all analog ports
+    ANSELH = 0x00;
+
+    TRISAbits.TRISA2 = 1;   //Disable the output driver for pin RA2/AN2
+    ANSELbits.ANS2 = 1;     //set RA2/AN2 to analog mode
+}
+
 void init_uart(void) {
     SPBRG = 0x19; // 9600 baud @ 4 MHz
     TXEN = 1; // enable transmitter
@@ -51,17 +74,74 @@ void init_uart(void) {
 }
 
 void init_adcs(void) {
-  //set the ADC on to RA2
-    setbit(TRISA,2);    //set TRISA:2 (input)
-    setbit (ANSEL,2);   //make it analogue
-  //set the 555 on RC6
-    setbit(TRISC,6);    //set TRISC:6 (input)
-    clrbit(ANSELH,2);   //make it inputs digital on RC6
-    ADCON0 = 0b00001001; // Analog channel select @ AN2, ADC enabled
-    __delay_ms(1); //delay after starting the ADC
+   
+    ADCON0bits.ADFM = 1;        //ADC result is right justified
+    ADCON0bits.VCFG = 0;        //Vdd is the +ve reference
+    ADCON1bits.ADCS = 0b001;    //Fosc/8 is the conversion clock
+                                //This is selected because the conversion
+                                //clock period (Tad) must be greater than 1.5us.
+                                //With a Fosc of 4MHz, Fosc/8 results in a Tad
+                                //of 2us.
+    ADCON0bits.CHS = 2;         //select analog input, AN2
+    ADCON0bits.ADON = 1;        //Turn on the ADC
 }
 
+void init_interrupts(void) {
+    T1CONbits.TMR1ON = 1;       //Enable Timer 1
+    T1CONbits.TMR1CS = 1;       //Choose clock source (External clock)
+    T1CONbits.nT1SYNC = 1;      //Do not synchronise external clock input
+    
+    OPTION_REGbits.PSA = 1;
+    OPTION_REGbits.T0CS = 0;
+}
 
+void start_count(void) {
+   INTCONbits.GIE = 0;         // Disable All interrupts.
+
+   TMR1H = 0;              // Clear Timer1 high count. stop overflow.
+   PIR1bits.TMR1IF = 0;  // Clear Interrupt Flag.
+   PIE1bits.TMR1IE = 1;
+   TMR1L = 0;              // Clear Timer1 low count.
+
+   TMR1_counter = 0;       // Clear overflow counter.
+   TMR0_counter=0;         // Clear overflow counter.
+
+   TMR0 = 0;               // Reset Timer0 value.
+   INTCONbits.T0IF = 0;      // Clear Timer0 int flag
+   INTCONbits.T0IE = 1;      // Enable Timer0 interrupt.
+
+   INTCONbits.PEIE = 1;        // Enable All Extended interrupt
+   INTCONbits.GIE = 1;         // Enable All interrupts.
+}
+
+void interrupt isr() {
+
+   if (PIR1bits.TMR1IF) {
+     TMR1_counter++;
+     PIR1bits.TMR1IF = 0;
+   }
+
+   if (INTCONbits.T0IF) {
+      TMR0_counter++;
+
+      if(time_done) { // The last count is not a full overflow.
+
+         TMR1L_val = TMR1L; // Capture counter values at this point.
+         TMR1H_val = TMR1H;
+         TMR1_ovfl_val = TMR1_counter;
+         transmit_data = 1;
+         time_done=0;
+
+      } else {
+
+         if(TMR0_counter==3906) { // 4MHz Capture the input count.
+            TMR0 = 256-64+2; // 2 cycles lost when writing to TMR0 so add 2.
+            time_done=1;
+         }
+      }
+      INTCONbits.T0IF = 0;
+   } // End TMR0IF
+}
 
 /*
  * Overwrite putch, so that calling
@@ -73,48 +153,42 @@ void putch(unsigned char data) {
     TXREG  =data; //send data
 }
 
-/*
- * main loop contains the loop that will repeat forever,
- * so all code goes in here.
-*/
-void mainloop(void) {
-    //function declarations
-    int get_555();//returns number of msec
-    int get_adc();//returns a number between 0 and 255
-    printf("Hello, World!\n");
-    int output_555 = get_555();
-    int output_adc = get_adc();
-    printf("%d",get_555());
-    printf("%d",output_adc);
-}
-
 void main(void) {
+    
+    unsigned long freq = 0;  // display frequency value to use.
+    int adc_val = 0;
     //call all init routines
+    init_ports();
     init_uart();
     init_adcs();
+    init_interrupts();
+
+    start_count();
+    
     //loop
     for(;;){
-        mainloop();
-        unsigned short int i;
-        for(i=0;0<100;i++)
-            __delay_ms(10);// loop about every second
-    }
-}
+        if(transmit_data) {
+            freq = TMR1L_val+(TMR1H_val<<8)+(TMR1_ovfl_val<<16);
+            start_count();
+            adc_val = get_adc();
 
-//functions
-int get_555(){//returns the number of ms that the system was low for
-    int counter = 0;
-    while(!(testbit(PORTC,6)));//loop while port is low
-    while(testbit(PORTC,6)){//wait until port goes high again
-        __delay_ms(1);//delay 1 ms
-        counter++;
+            //printf("%lu,%d\n",freq,adc_val);
+            printf("%lu,%d\r",freq,adc_val);        
+            transmit_data = 0;
+            
+//            short i;
+//            
+//            for(i = 0; i < 100; ++i)
+//                __delay_ms(10); 
+        }
     }
-    return counter;
 }
 
 int get_adc(void){
-    setbit(ADCON0,1);
-    __delay_ms(1);
-    while(testbit(ADCON0,1));//wait until test is done
-    return ADRESH;//returns the upper 8 bits of the ADC reading
+      __delay_us(5);              //Wait the acquisition time (about 5us).
+
+    ADCON0bits.GO = 1;          //start the conversion
+    while(ADCON0bits.GO==1);  //wait for the conversion to end
+    
+    return (ADRESH<<8)+ADRESL;//returns the upper 8 bits of the ADC reading
 }
