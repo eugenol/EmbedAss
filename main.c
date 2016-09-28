@@ -1,6 +1,6 @@
 /*
  * File:   main.c
- * Author: eug
+ * Author: eugenol
  *
  * Created on 02 September 2016, 11:28 AM
  */
@@ -33,17 +33,15 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-
+//Global variables
 unsigned long TMR1_counter=0;  // Count overflow from interrupt.
 unsigned long TMR0_counter=0;  // Count overflow from interrupt.
-
-bit time_done = 0;   // Do last short overflow count.
-bit transmit_data = 0;
-//
+// Flags - bit data type to save space
+bit time_done = 0;              // Do last fraction of overflow count.
+bit transmit_data = 0;          // data ready to send?
 // Frequency Counter values.
-//
-unsigned char TMR1L_val; // Store Timer 1 low byte.
-unsigned char TMR1H_val; // store Timer 1 high byte.
+unsigned char TMR1L_val;        // Store Timer 1 low byte.
+unsigned char TMR1H_val;        // store Timer 1 high byte.
 unsigned long TMR1_ovfl_val = 0; // store timer 1 overflows - multiples of 65536.
 
 //function declarations
@@ -66,11 +64,11 @@ void init_ports(void) {
 }
 
 void init_uart(void) {
-    SPBRG = 0x19; // 9600 baud @ 4 MHz
-    TXEN = 1; // enable transmitter
-    BRGH = 1; // select high baud rate
-    SPEN = 1; // enable serial port
-    CREN = 1; // enable continuous operation
+    SPBRG = 0x19;   // 9600 baud @ 4 MHz
+    TXEN = 1;       // enable transmitter
+    BRGH = 1;       // select high baud rate
+    SPEN = 1;       // enable serial port
+    CREN = 1;       // enable continuous operation
 }
 
 void init_adcs(void) {
@@ -90,57 +88,57 @@ void init_interrupts(void) {
     T1CONbits.TMR1ON = 1;       //Enable Timer 1
     T1CONbits.TMR1CS = 1;       //Choose clock source (External clock)
     T1CONbits.nT1SYNC = 1;      //Do not synchronise external clock input
-    
+
     OPTION_REGbits.PSA = 1;
     OPTION_REGbits.T0CS = 0;
 }
 
 void start_count(void) {
-   INTCONbits.GIE = 0;         // Disable All interrupts.
+    INTCONbits.GIE = 0;          // Disable All interrupts.
 
-   TMR1H = 0;              // Clear Timer1 high count. stop overflow.
-   PIR1bits.TMR1IF = 0;  // Clear Interrupt Flag.
-   PIE1bits.TMR1IE = 1;
-   TMR1L = 0;              // Clear Timer1 low count.
+    TMR1H = 0;                   // Clear Timer1 high count.
+    PIR1bits.TMR1IF = 0;         // Clear Interrupt Flag.
+    PIE1bits.TMR1IE = 1;
+    TMR1L = 0;                   // Clear Timer1 low count.
 
-   TMR1_counter = 0;       // Clear overflow counter.
-   TMR0_counter=0;         // Clear overflow counter.
+    TMR1_counter = 0;        // Clear overflow counter.
+    TMR0_counter=0;         // Clear overflow counter.
 
-   TMR0 = 0;               // Reset Timer0 value.
-   INTCONbits.T0IF = 0;      // Clear Timer0 int flag
-   INTCONbits.T0IE = 1;      // Enable Timer0 interrupt.
+    TMR0 = 0;               // Reset Timer0 value.
+    INTCONbits.T0IF = 0;      // Clear Timer0 interrupt flag
+    INTCONbits.T0IE = 1;      // Enable Timer0 interrupt.
 
-   INTCONbits.PEIE = 1;        // Enable All Extended interrupt
-   INTCONbits.GIE = 1;         // Enable All interrupts.
+    INTCONbits.PEIE = 1;        // Enable All Extended interrupt
+    INTCONbits.GIE = 1;         // Enable All interrupts.
 }
 
 void interrupt isr() {
+    // Timer/Counter 1 Interrupt
+    if (PIR1bits.TMR1IF) {
+        TMR1_counter++;         //increment overflow count
+        PIR1bits.TMR1IF = 0;    //clear timer 1 interrupt flag
+    }
+    // Timer/counter 0 interrupt
+    if (INTCONbits.T0IF) {
+        TMR0_counter++;         //overflow, so increment count
 
-   if (PIR1bits.TMR1IF) {
-     TMR1_counter++;
-     PIR1bits.TMR1IF = 0;
-   }
+        if(time_done) { // The last count is not a full overflow.
 
-   if (INTCONbits.T0IF) {
-      TMR0_counter++;
+            TMR1L_val = TMR1L; // Capture counter values of low byte.
+            TMR1H_val = TMR1H; // Capture counter values of low byte.
+            TMR1_ovfl_val = TMR1_counter; // capture number of overflows
+            transmit_data = 1;  // data ready to transmit
+            time_done=0;        //clear flag
 
-      if(time_done) { // The last count is not a full overflow.
+        } else {
 
-         TMR1L_val = TMR1L; // Capture counter values at this point.
-         TMR1H_val = TMR1H;
-         TMR1_ovfl_val = TMR1_counter;
-         transmit_data = 1;
-         time_done=0;
-
-      } else {
-
-         if(TMR0_counter==3906) { // 4MHz Capture the input count.
-            TMR0 = 256-64+2; // 2 cycles lost when writing to TMR0 so add 2.
-            time_done=1;
-         }
-      }
-      INTCONbits.T0IF = 0;
-   } // End TMR0IF
+           if(TMR0_counter==3906) { // 4MHz Capture the input count.
+                TMR0 = 256-64+2; // 2 cycles lost when writing to TMR0 so add 2.
+                time_done=1;     //  set flag
+           }
+        }
+        INTCONbits.T0IF = 0; //clear timer 0 interrupt flag
+    } // End TMR0IF
 }
 
 /*
@@ -165,21 +163,17 @@ void main(void) {
 
     start_count();
     
-    //loop
+    // main loop
     for(;;){
+        // check flag and transmit if ready
         if(transmit_data) {
-            freq = TMR1L_val+(TMR1H_val<<8)+(TMR1_ovfl_val<<16);
-            start_count();
-            adc_val = get_adc();
+            // store freq value in long
+            freq = TMR1L_val+(TMR1H_val<<8)+(TMR1_ovfl_val<<16); 
+            start_count(); // start freq counter again
+            adc_val = get_adc(); // read adc
 
-            //printf("%lu,%d\n",freq,adc_val);
-            printf("%lu,%d\r",freq,adc_val);        
+            printf("%lu,%d\r",freq,adc_val); //send data to serial port  
             transmit_data = 0;
-            
-//            short i;
-//            
-//            for(i = 0; i < 100; ++i)
-//                __delay_ms(10); 
         }
     }
 }
@@ -190,5 +184,5 @@ int get_adc(void){
     ADCON0bits.GO = 1;          //start the conversion
     while(ADCON0bits.GO==1);  //wait for the conversion to end
     
-    return (ADRESH<<8)+ADRESL;//returns the upper 8 bits of the ADC reading
+    return (ADRESH<<8)+ADRESL;//returns the ADC reading
 }
